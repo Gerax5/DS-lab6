@@ -165,6 +165,248 @@ class SpanishTextAnalyzer:
         
         return hashtag_counts
     
+    def analyze_rainy_season_impact(self):
+        """Analyze how rainy season affected traffic"""
+        rain_keywords = [
+            'lluvia', 'lluvias', 'lloviendo', 'llueve', 'temporal', 'aguacero',
+            'inundacion', 'inundaciones', 'encharcamiento', 'agua', 'mojado',
+            'humedo', 'precipitacion', 'tormenta', 'tormentas', 'chaparrón'
+        ]
+        
+        # Create rain-related text filter
+        def contains_rain_keywords(text):
+            if pd.isna(text):
+                return False
+            text_lower = text.lower()
+            return any(keyword in text_lower for keyword in rain_keywords)
+        
+        rain_tweets = self.df[self.df[self.text_column].apply(contains_rain_keywords)]
+        
+        print(f"\n🌧️ RAINY SEASON TRAFFIC IMPACT ANALYSIS")
+        print(f"=" * 50)
+        print(f"Rain-related tweets: {len(rain_tweets)} ({len(rain_tweets)/len(self.df)*100:.1f}%)")
+        
+        if len(rain_tweets) > 0:
+            # Sentiment during rain
+            if 'sentiment_label' in rain_tweets.columns:
+                rain_sentiment = rain_tweets['sentiment_label'].value_counts()
+                print(f"\nSentiment during rainy conditions:")
+                for sentiment, count in rain_sentiment.items():
+                    pct = count/len(rain_tweets)*100
+                    print(f"  {sentiment}: {count} ({pct:.1f}%)")
+            
+            # Common phrases in rain tweets
+            rain_text = ' '.join(rain_tweets[self.text_column].fillna(''))
+            processed_rain_text = self.preprocess_text(rain_text)
+            
+            if processed_rain_text:
+                from collections import Counter
+                words = processed_rain_text.split()
+                common_rain_words = Counter(words).most_common(10)
+                print(f"\nMost common words in rain-related traffic tweets:")
+                for word, count in common_rain_words:
+                    print(f"  {word}: {count}")
+        
+        return rain_tweets
+    
+    def analyze_congested_areas(self):
+        """Identify most congested areas mentioned in tweets"""
+        # Guatemala City areas and zones
+        guatemala_areas = [
+            # Zones
+            'zona 1', 'zona 2', 'zona 3', 'zona 4', 'zona 5', 'zona 6', 'zona 7', 
+            'zona 8', 'zona 9', 'zona 10', 'zona 11', 'zona 12', 'zona 13', 
+            'zona 14', 'zona 15', 'zona 16', 'zona 17', 'zona 18', 'zona 19', 'zona 21',
+            
+            # Major areas and neighborhoods
+            'centro historico', 'centro', 'roosevelt', 'reforma', 'vista hermosa',
+            'las americas', 'pradera', 'carretera al salvador', 'carretera interamericana',
+            'mixco', 'villa nueva', 'petapa', 'santa catarina pinula', 'san jose pinula',
+            'fraijanes', 'amatitlan', 'villa canales', 'chinautla', 'san pedro sacatepequez',
+            
+            # Major roads and highways
+            'ca1', 'ca9', 'ruta al atlantico', 'ruta al pacifico', 'anillo periferico',
+            'bulevar liberacion', 'calzada roosevelt', 'calzada san juan',
+            '6a avenida', '7a avenida', 'avenida reforma', 'avenida las americas',
+            'carretera a el salvador', 'autopista palín escuintla',
+            
+            # Commercial areas
+            'centra norte', 'pradera concepcion', 'oakland mall', 'metronorte',
+            'miraflores', 'portales', 'torre del reformador'
+        ]
+        
+        # Traffic/congestion keywords
+        traffic_keywords = [
+            'trafico', 'tráfico', 'congestion', 'congestionamiento', 'tranque',
+            'embotellamiento', 'atasco', 'lento', 'pesado', 'saturado',
+            'bloqueado', 'cerrado', 'accidente', 'choque', 'colision'
+        ]
+        
+        area_mentions = Counter()
+        traffic_by_area = {}
+        
+        for idx, text in self.df[self.text_column].items():
+            if pd.isna(text):
+                continue
+                
+            text_lower = text.lower()
+            
+            # Check if it's a traffic-related tweet
+            is_traffic_tweet = any(keyword in text_lower for keyword in traffic_keywords)
+            
+            if is_traffic_tweet:
+                # Find mentioned areas
+                for area in guatemala_areas:
+                    if area in text_lower:
+                        area_mentions[area] += 1
+                        if area not in traffic_by_area:
+                            traffic_by_area[area] = []
+                        traffic_by_area[area].append(text)
+        
+        print(f"\n🚗 MOST CONGESTED AREAS ANALYSIS")
+        print(f"=" * 50)
+        
+        if area_mentions:
+            print(f"Top 15 most mentioned congested areas:")
+            for area, count in area_mentions.most_common(15):
+                print(f"  {area.title()}: {count} mentions")
+                
+            # Show sample tweets for top areas
+            print(f"\nSample traffic reports for top areas:")
+            for area, count in area_mentions.most_common(5):
+                if area in traffic_by_area and traffic_by_area[area]:
+                    print(f"\n{area.title()} ({count} mentions):")
+                    sample_tweet = traffic_by_area[area][0][:100] + "..."
+                    print(f"  Example: {sample_tweet}")
+        else:
+            print("No specific areas identified in traffic tweets")
+            
+        return area_mentions, traffic_by_area
+    
+    def analyze_temporal_patterns(self):
+        """Analyze congestion patterns by time (requires datetime column)"""
+        print(f"\n⏰ TEMPORAL CONGESTION PATTERNS")
+        print(f"=" * 50)
+        
+        # Check if we have datetime information
+        datetime_columns = [col for col in self.df.columns if any(term in col.lower() 
+                           for term in ['time', 'date', 'created', 'timestamp', 'hora', 'fecha'])]
+        
+        if not datetime_columns:
+            print("No datetime column found. Please ensure your dataframe has a datetime column.")
+            print("Available columns:", list(self.df.columns))
+            return None, None
+            
+        # Try to use the first datetime column
+        dt_col = datetime_columns[0]
+        print(f"Using datetime column: {dt_col}")
+        
+        try:
+            # Convert to datetime if not already
+            if not pd.api.types.is_datetime64_any_dtype(self.df[dt_col]):
+                self.df[dt_col] = pd.to_datetime(self.df[dt_col])
+            
+            # Extract hour and day of week
+            self.df['hour'] = self.df[dt_col].dt.hour
+            self.df['day_of_week'] = self.df[dt_col].dt.day_name()
+            
+            # Filter traffic-related tweets
+            traffic_keywords = ['trafico', 'tráfico', 'congestion', 'tranque', 'lento', 'pesado']
+            traffic_tweets = self.df[self.df[self.text_column].str.contains(
+                '|'.join(traffic_keywords), case=False, na=False)]
+            
+            if len(traffic_tweets) > 0:
+                # Hourly patterns
+                hourly_traffic = traffic_tweets['hour'].value_counts().sort_index()
+                print(f"\nTraffic reports by hour:")
+                for hour, count in hourly_traffic.items():
+                    print(f"  {hour:02d}:00 - {count} reports")
+                
+                # Peak hours
+                peak_hours = hourly_traffic.nlargest(3)
+                print(f"\nPeak congestion hours:")
+                for hour, count in peak_hours.items():
+                    print(f"  {hour:02d}:00 - {count} reports")
+                
+                # Day of week patterns
+                daily_traffic = traffic_tweets['day_of_week'].value_counts()
+                print(f"\nTraffic reports by day of week:")
+                for day, count in daily_traffic.items():
+                    print(f"  {day}: {count} reports")
+                    
+                return hourly_traffic, daily_traffic
+            else:
+                print("No traffic-related tweets found for temporal analysis")
+                return None, None
+                
+        except Exception as e:
+            print(f"Error processing datetime column: {e}")
+            return None, None
+    
+    def predict_congestion_patterns(self):
+        """Analyze patterns to predict future congestion"""
+        print(f"\n🔮 CONGESTION PREDICTION ANALYSIS")
+        print(f"=" * 50)
+        
+        # Analyze historical patterns
+        area_mentions, traffic_by_area = self.analyze_congested_areas()
+        
+        if area_mentions:
+            # Identify consistently problematic areas
+            top_areas = area_mentions.most_common(10)
+            
+            print(f"Areas likely to remain congested (based on frequency):")
+            for area, count in top_areas:
+                # Calculate likelihood based on frequency and sentiment
+                traffic_texts = traffic_by_area.get(area, [])
+                
+                if len(traffic_texts) > 0 and 'sentiment_label' in self.df.columns:
+                    # Check sentiment of tweets about this area
+                    area_tweets = self.df[self.df[self.text_column].str.contains(
+                        area, case=False, na=False)]
+                    
+                    if len(area_tweets) > 0:
+                        negative_pct = (area_tweets['sentiment_label'] == 'negative').mean() * 100
+                        likelihood = min(100, (count * 10) + negative_pct)
+                        
+                        status = "🔴 Very Likely" if likelihood > 70 else "🟡 Likely" if likelihood > 40 else "🟢 Possible"
+                        print(f"  {area.title()}: {status} ({count} reports, {negative_pct:.0f}% negative sentiment)")
+        
+        # Seasonal patterns (if we have enough data)
+        print(f"\nFactors suggesting continued congestion:")
+        print(f"  • Consistent area mentions indicate structural traffic problems")
+        print(f"  • High negative sentiment suggests ongoing frustration")
+        print(f"  • Areas with infrastructure limitations likely to persist")
+        
+        return area_mentions.most_common(10) if area_mentions else []
+    
+    def generate_traffic_insights_report(self):
+        """Generate comprehensive traffic-specific analysis report"""
+        print("=" * 60)
+        print("🚦 GUATEMALA CITY TRAFFIC ANALYSIS REPORT 🚦")
+        print("=" * 60)
+        
+        # 1. Rainy season impact
+        rain_tweets = self.analyze_rainy_season_impact()
+        
+        # 2. Congested areas
+        area_mentions, traffic_by_area = self.analyze_congested_areas()
+        
+        # 3. Temporal patterns
+        hourly_traffic, daily_traffic = self.analyze_temporal_patterns()
+        
+        # 4. Future predictions
+        top_problematic_areas = self.predict_congestion_patterns()
+        
+        # Summary and recommendations
+        print(f"\n📋 SUMMARY AND RECOMMENDATIONS")
+        print(f"=" * 50)
+        print(f"✅ Use this analysis to:")
+        print(f"  • Identify peak congestion times for route planning")
+        print(f"  • Focus infrastructure improvements on most mentioned areas")
+        print(f"  • Prepare for seasonal challenges during rainy periods")
+        print(f"  • Monitor sentiment trends to gauge public satisfaction")
+    
     def perform_topic_modeling(self, n_topics=5, method='lda'):
         """Perform topic modeling using LDA or NMF"""
         # Preprocess texts
@@ -281,29 +523,3 @@ class SpanishTextAnalyzer:
             print(f"\nTop 10 Hashtags:")
             for hashtag, count in hashtag_counts.most_common(10):
                 print(f"#{hashtag}: {count}")
-
-# Example usage:
-"""
-# Assuming your dataframe is called 'df'
-analyzer = SpanishTextAnalyzer(df, 'text_clean_raw', 'hastags')
-
-# Perform sentiment analysis
-df_with_sentiment = analyzer.analyze_sentiment_textblob()
-df_with_sentiment = analyzer.analyze_sentiment_vader()
-
-# Perform topic modeling
-lda_model, vectorizer, doc_term_matrix = analyzer.perform_topic_modeling(n_topics=5, method='lda')
-if lda_model:
-    topics = analyzer.display_topics(lda_model, vectorizer)
-
-# Create visualizations
-analyzer.visualize_sentiment_distribution()
-analyzer.create_wordcloud()
-
-# Generate comprehensive report
-analyzer.generate_report()
-
-# Access the results
-print("Sample results:")
-print(df_with_sentiment[['text_clean_raw', 'sentiment_label', 'vader_label', 'sentiment_score', 'vader_score']].head())
-"""
